@@ -1,0 +1,42 @@
+﻿import asyncio
+import logging
+from pathlib import Path
+from typing import Dict
+from .torrent import TorrentMetadata
+from .ui import BitTorrentUI
+
+class BitTorrentClient:
+    def __init__(self, download_dir: str = "downloads"):
+        self.download_dir = Path(download_dir)
+        self.download_dir.mkdir(exist_ok=True)
+        self.torrents: Dict[str, TorrentMetadata] = {}
+        self._setup_logging()
+        self.ui = BitTorrentUI(self)  # UI initialization after logger
+
+    def _setup_logging(self):
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler('bruvtorrent.log'),
+                logging.StreamHandler()
+            ]
+        )
+
+    async def add_torrent(self, torrent_path: str):
+        try:
+            metadata = TorrentMetadata.from_file(Path(torrent_path))
+            self.torrents[metadata.info_hash] = metadata
+            self.ui.update_torrent_list()
+            return True
+        except Exception as e:
+            logging.error(f"Error adding torrent: {e}")
+            return False
+
+    def run(self):
+        """Run the Tkinter mainloop (synchronous)"""
+        self.ui.mainloop()
+
+if __name__ == "__main__":
+    client = BitTorrentClient()
+    client.run()  # Use synchronous run instead of asyncio

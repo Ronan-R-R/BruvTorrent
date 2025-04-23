@@ -1,19 +1,66 @@
-﻿# Python
-*.pyc
-*.pyo
-*.pyd
+﻿# Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
 .venv/
 venv/
+ENV/
+env/
 
-# Project files
-downloads/
-*.torrent
-
-# IDE
+# IDE specific files
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# System
+# Build and distribution
+build/
+dist/
+*.egg-info/
+*.egg
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Log files
+*.log
+*.log.*
+logs/
+
+# System files
 .DS_Store
 Thumbs.db
+
+# Project-specific ignores
+downloads/  # User download directory
+*.torrent  # Torrent files
+*.session  # Session files
+config.ini  # Local config
+
+# Debug files
+debug_*.py
+
+# Temp files
+*.tmp
+*.temp
+
+# Visual Studio Code
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json

@@ -11,3 +11,10 @@ pytest>=8.0.0         # For testing (optional)
 black>=24.0.0         # Code formatting
 flake8>=7.0.0         # Linting
 mypy>=1.8.0           # Type checking
+
+echo "requests>=2.31.0" >> requirements.txt
+echo "pyxdg>=2.0.0" >> requirements.txt
+echo "cryptography>=44.0.2" >> requirements.txt
+
+# Install them
+pip install -r requirements.txt
