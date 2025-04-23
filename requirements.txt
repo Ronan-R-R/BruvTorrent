@@ -1,0 +1,13 @@
+﻿# Core Dependencies
+cryptography>=44.0.2  # For SSL encryption
+requests>=2.31.0      # For tracker HTTP requests
+pyxdg>=2.0.0          # For config files (Linux/macOS)
+pytest>=8.0.0         # For testing (optional)
+
+# GUI Dependencies (if using tkinter - already in Python stdlib)
+# No entry needed for tkinter (it's built-in)
+
+# Development Extras (optional)
+black>=24.0.0         # Code formatting
+flake8>=7.0.0         # Linting
+mypy>=1.8.0           # Type checking

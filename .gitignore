@@ -1,0 +1,19 @@
+﻿# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.venv/
+venv/
+
+# Project files
+downloads/
+*.torrent
+
+# IDE
+.vscode/
+.idea/
+
+# System
+.DS_Store
+Thumbs.db
