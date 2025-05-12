@@ -199,6 +199,22 @@ class BitTorrentUI(tk.Tk):
                     "0 KB/s"
                 ))
 
+        def update_progress(self, info_hash: bytes, downloaded: int, total: int):
+            """Update progress in the UI"""
+            for item in self.torrent_list.get_children():
+                if self.torrent_list.item(item)['values'][0] == info_hash.hex():
+                    percent = (downloaded / total) * 100
+                    self.torrent_list.item(item, values=(
+                        self.torrent_list.item(item)['values'][0],  # Name
+                        f"{total / 1024 / 1024:.2f} MB",  # Size
+                        f"{percent:.1f}%",  # Progress
+                        "Downloading",  # Status
+                        str(len(self.active_downloads[info_hash]['peers'])),  # Peers
+                        "0 KB/s",  # Download speed (implement tracking)
+                        "0 KB/s"  # Upload speed
+                    ))
+                    break
+
     # Client control methods
     def start_torrent(self):
         if hasattr(self.client, 'start_selected_torrent'):
@@ -229,7 +245,6 @@ class BitTorrentUI(tk.Tk):
         )
         if magnet and hasattr(self.client, 'add_magnet_link'):
             self.client.add_magnet_link(magnet)
-
 
 if __name__ == "__main__":
     # Test the UI standalone
