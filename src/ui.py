@@ -3,7 +3,7 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 from tkinter.scrolledtext import ScrolledText
 from typing import Dict, Optional
 import asyncio
-
+from pathlib import Path
 
 class BitTorrentUI(tk.Tk):
     def __init__(self, client):
@@ -298,6 +298,68 @@ class BitTorrentUI(tk.Tk):
         if magnet and self.client:
             self.log_message(f"Adding magnet link: {magnet}")
             # TODO: Implement magnet link handling
+
+    def update_torrent_progress(self, info_hash: str, **kwargs):
+        """Update specific torrent's progress info with real data"""
+        for item in self.torrent_list.get_children():
+            item_values = self.torrent_list.item(item)['values']
+            if item_values and item_values[0] == info_hash:
+                new_values = list(item_values)
+
+                if 'progress' in kwargs:
+                    new_values[2] = f"{kwargs['progress']}%"
+                if 'status' in kwargs:
+                    new_values[3] = kwargs['status']
+                if 'download_speed' in kwargs:
+                    new_values[5] = kwargs['download_speed']
+
+                self.torrent_list.item(item, values=new_values)
+                break
+
+    def update_file_progress(self, info_hash: str, file_path: Path, downloaded: int, total: int):
+        """Update progress for individual files"""
+        for item in self.files_tree.get_children():
+            item_values = self.files_tree.item(item)['values']
+            if item_values and item_values[0] == str(file_path):
+                progress = int((downloaded / total) * 100) if total > 0 else 0
+                self.files_tree.item(item, values=(
+                    str(file_path),
+                    f"{total / (1024 * 1024):.2f} MB",
+                    f"{progress}%"
+                ))
+                break
+
+    def _setup_menu(self):
+        """Create menu bar with download path option"""
+        menubar = tk.Menu(self)
+
+        # File menu
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="Add Torrent", command=self.add_torrent)
+        file_menu.add_command(label="Add Magnet", command=self.add_magnet)
+        file_menu.add_command(label="Set Download Location...", command=self.set_download_path)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.quit)
+        menubar.add_cascade(label="File", menu=file_menu)
+
+        # View menu
+        view_menu = tk.Menu(menubar, tearoff=0)
+        view_menu.add_command(label="Light Mode", command=lambda: self.set_theme("light"))
+        view_menu.add_command(label="Dark Mode", command=lambda: self.set_theme("dark"))
+        menubar.add_cascade(label="View", menu=view_menu)
+
+        self.config(menu=menubar)
+
+    def set_download_path(self):
+        """Open dialog to set download location"""
+        initial_dir = str(self.client.download_dir) if hasattr(self.client, 'download_dir') else None
+        path = filedialog.askdirectory(
+            title="Select Download Folder",
+            initialdir=initial_dir
+        )
+        if path:
+            self.client.set_download_path(path)
+            self.log_message(f"Download location set to: {path}")
 
     async def start_ui(self):
         """Start the UI main loop"""
