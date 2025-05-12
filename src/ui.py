@@ -1,7 +1,8 @@
 ﻿import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 from tkinter.scrolledtext import ScrolledText
-from typing import Optional
+from typing import Dict, Optional
+import asyncio
 
 
 class BitTorrentUI(tk.Tk):
@@ -12,26 +13,21 @@ class BitTorrentUI(tk.Tk):
         self.geometry("1000x700")
         self.minsize(800, 600)
 
-        # Enhanced color scheme (lighter dark mode)
+        # DeepSeek-inspired theme colors
         self.themes = {
             "light": {
-                "bg": "#f8f9fa", "fg": "#212529",
-                "button": "#e9ecef", "tree": "#ffffff",
-                "select": "#dee2e6", "text_bg": "#ffffff",
-                "text_fg": "#212529", "border": "#ced4da",
+                "bg": "#ffffff", "fg": "#333333",
+                "button": "#f5f5f5", "tree": "#ffffff",
+                "select": "#e6f2ff", "text_bg": "#ffffff",
+                "text_fg": "#333333", "border": "#e1e1e1",
                 "highlight": "#0078d7", "tab_bg": "#f0f0f0"
             },
             "dark": {
-                "bg": "#2b3035",  # Lighter dark background
-                "fg": "#e9ecef",  # Soft white text
-                "button": "#495057",
-                "tree": "#343a40",  # Darker elements
-                "select": "#3d4348",
-                "text_bg": "#343a40",
-                "text_fg": "#e9ecef",
-                "border": "#495057",
-                "highlight": "#1a73e8",
-                "tab_bg": "#1e1e1e"
+                "bg": "#1a1a1a", "fg": "#e6e6e6",
+                "button": "#2d2d2d", "tree": "#252525",
+                "select": "#3a3a3a", "text_bg": "#252525",
+                "text_fg": "#e6e6e6", "border": "#333333",
+                "highlight": "#4a90e2", "tab_bg": "#2d2d2d"
             }
         }
         self.current_theme = "dark"  # Default to dark mode
@@ -39,22 +35,21 @@ class BitTorrentUI(tk.Tk):
         self._setup_style()
         self._setup_ui()
         self._setup_menu()
-        self._setup_bindings()
-        self._apply_full_theme()
+        self._setup_window_bindings()
+        self._apply_theme()
 
     def _setup_style(self):
-        """Configure ttk styles for both themes"""
+        """Configure ttk styles for themes"""
         self.style = ttk.Style()
         self.style.theme_use('clam')
 
-        # Base styles
+        # Base style
         self.style.configure('.',
                              background=self.themes[self.current_theme]['bg'],
                              foreground=self.themes[self.current_theme]['fg'],
                              bordercolor=self.themes[self.current_theme]['border'],
                              lightcolor=self.themes[self.current_theme]['bg'],
-                             darkcolor=self.themes[self.current_theme]['bg'],
-                             troughcolor=self.themes[self.current_theme]['bg']
+                             darkcolor=self.themes[self.current_theme]['bg']
                              )
 
         # Treeview
@@ -70,8 +65,8 @@ class BitTorrentUI(tk.Tk):
         self.style.configure('TButton',
                              background=self.themes[self.current_theme]['button'],
                              foreground=self.themes[self.current_theme]['fg'],
-                             relief=tk.RAISED,
-                             borderwidth=1
+                             bordercolor=self.themes[self.current_theme]['border'],
+                             focuscolor=self.themes[self.current_theme]['highlight']
                              )
 
         # Notebook
@@ -82,7 +77,8 @@ class BitTorrentUI(tk.Tk):
         self.style.configure('TNotebook.Tab',
                              background=self.themes[self.current_theme]['tab_bg'],
                              foreground=self.themes[self.current_theme]['fg'],
-                             padding=[10, 5]
+                             padding=[10, 5],
+                             borderwidth=0
                              )
 
     def _setup_ui(self):
@@ -92,11 +88,17 @@ class BitTorrentUI(tk.Tk):
 
         # Main container
         main_frame = ttk.Frame(self)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Torrent list
         columns = ('name', 'size', 'progress', 'status', 'peers', 'download', 'upload')
-        self.torrent_list = ttk.Treeview(main_frame, columns=columns, show='headings')
+        self.torrent_list = ttk.Treeview(
+            main_frame,
+            columns=columns,
+            show='headings',
+            height=15,
+            selectmode='browse'
+        )
 
         # Configure columns
         for col in columns:
@@ -119,7 +121,11 @@ class BitTorrentUI(tk.Tk):
 
         # Files tab
         files_frame = ttk.Frame(self.notebook)
-        self.files_tree = ttk.Treeview(files_frame, columns=('name', 'size', 'progress'))
+        self.files_tree = ttk.Treeview(
+            files_frame,
+            columns=('name', 'size', 'progress'),
+            show='headings'
+        )
         self.files_tree.pack(fill=tk.BOTH, expand=True)
         self.notebook.add(files_frame, text="Files")
 
@@ -128,6 +134,7 @@ class BitTorrentUI(tk.Tk):
         self.log_text = ScrolledText(
             log_frame,
             wrap=tk.WORD,
+            font=('Consolas', 10),
             bg=self.themes[self.current_theme]['text_bg'],
             fg=self.themes[self.current_theme]['text_fg'],
             insertbackground=self.themes[self.current_theme]['fg'],
@@ -138,7 +145,7 @@ class BitTorrentUI(tk.Tk):
         self.notebook.add(log_frame, text="Log")
 
     def _setup_menu(self):
-        """Create menu bar with theme options"""
+        """Create menu bar"""
         menubar = tk.Menu(self)
 
         # File menu
@@ -157,7 +164,7 @@ class BitTorrentUI(tk.Tk):
 
         self.config(menu=menubar)
 
-    def _setup_bindings(self):
+    def _setup_window_bindings(self):
         """Handle window events"""
         self.bind("<Configure>", self._on_window_resize)
 
@@ -166,87 +173,143 @@ class BitTorrentUI(tk.Tk):
         if event.width < 800:
             self.geometry("800x600")
 
-    def _apply_full_theme(self):
-        """Apply theme to all widgets including non-ttk ones"""
+    def _apply_theme(self):
+        """Apply current theme to all widgets"""
         # Update root window
         self.configure(bg=self.themes[self.current_theme]['bg'])
 
-        # Special case for text widgets
+        # Update text widgets
         self.log_text.configure(
             bg=self.themes[self.current_theme]['text_bg'],
             fg=self.themes[self.current_theme]['text_fg'],
             insertbackground=self.themes[self.current_theme]['fg']
         )
 
+        # Update all ttk widgets
+        self.style.theme_use('clam')
+        self._update_ttk_styles()
+
+    def _update_ttk_styles(self):
+        """Refresh ttk widget styles"""
+        self.style.configure('Treeview',
+                             background=self.themes[self.current_theme]['tree'],
+                             foreground=self.themes[self.current_theme]['fg'],
+                             selectbackground=self.themes[self.current_theme]['select']
+                             )
+        self.style.configure('TButton',
+                             background=self.themes[self.current_theme]['button'],
+                             foreground=self.themes[self.current_theme]['fg']
+                             )
+
     def set_theme(self, theme_name: str):
-        """Switch between light and dark themes"""
+        """Switch between light/dark themes"""
         self.current_theme = theme_name
         self._setup_style()
-        self._apply_full_theme()
+        self._apply_theme()
 
-    def update_torrent_list(self):
+    def update_torrent_list(self, torrents: Dict):
         """Refresh the torrent list display"""
         self.torrent_list.delete(*self.torrent_list.get_children())
-        if hasattr(self.client, 'torrents'):
-            for info_hash, torrent in self.client.torrents.items():
-                self.torrent_list.insert('', 'end', values=(
-                    torrent.name,
-                    f"{sum(f.length for f in torrent.files) / 1024 / 1024:.2f} MB",
-                    "0%",
-                    "Waiting",
-                    "0",
-                    "0 KB/s",
-                    "0 KB/s"
-                ))
+        for info_hash, metadata in torrents.items():
+            self.torrent_list.insert('', 'end',
+                                     values=(
+                                         metadata.name,
+                                         "0 B",  # Placeholder for size
+                                         "0%",  # Progress placeholder
+                                         "Queued",  # Status
+                                         "0",  # Peers
+                                         "0 B/s",  # Download speed
+                                         "0 B/s"  # Upload speed
+                                     ),
+                                     tags=(info_hash,)  # Store hash as tag
+                                     )
 
-        def update_progress(self, info_hash: bytes, downloaded: int, total: int):
-            """Update progress in the UI"""
-            for item in self.torrent_list.get_children():
-                if self.torrent_list.item(item)['values'][0] == info_hash.hex():
-                    percent = (downloaded / total) * 100
-                    self.torrent_list.item(item, values=(
-                        self.torrent_list.item(item)['values'][0],  # Name
-                        f"{total / 1024 / 1024:.2f} MB",  # Size
-                        f"{percent:.1f}%",  # Progress
-                        "Downloading",  # Status
-                        str(len(self.active_downloads[info_hash]['peers'])),  # Peers
-                        "0 KB/s",  # Download speed (implement tracking)
-                        "0 KB/s"  # Upload speed
-                    ))
-                    break
+    def update_torrent_progress(self, info_hash: str, **kwargs):
+        """Update specific torrent's progress info"""
+        for item in self.torrent_list.get_children():
+            item_tags = self.torrent_list.item(item, 'tags')
+            if item_tags and item_tags[0] == info_hash:
+                values = list(self.torrent_list.item(item, 'values'))
 
-    # Client control methods
+                if 'progress' in kwargs:
+                    values[2] = f"{kwargs['progress']}%"
+                if 'status' in kwargs:
+                    values[3] = kwargs['status']
+                if 'peers' in kwargs:
+                    values[4] = str(kwargs['peers'])
+                if 'download_speed' in kwargs:
+                    values[5] = kwargs['download_speed']
+                if 'upload_speed' in kwargs:
+                    values[6] = kwargs['upload_speed']
+
+                self.torrent_list.item(item, values=values)
+                break
+
+    def log_message(self, message: str):
+        """Add message to log"""
+        self.log_text.configure(state='normal')
+        self.log_text.insert('end', message + '\n')
+        self.log_text.configure(state='disabled')
+        self.log_text.see('end')
+
     def start_torrent(self):
-        if hasattr(self.client, 'start_selected_torrent'):
-            self.client.start_selected_torrent()
+        """Start selected torrent"""
+        selected = self.torrent_list.selection()
+        if selected and self.client:
+            item = self.torrent_list.item(selected[0])
+            info_hash = item['tags'][0] if item['tags'] else None
+            if info_hash:
+                asyncio.create_task(self.client.download_torrent(info_hash))
 
     def pause_torrent(self):
-        if hasattr(self.client, 'pause_selected_torrent'):
-            self.client.pause_selected_torrent()
+        """Pause selected torrent"""
+        selected = self.torrent_list.selection()
+        if selected and self.client:
+            item = self.torrent_list.item(selected[0])
+            info_hash = item['tags'][0] if item['tags'] else None
+            if info_hash:
+                asyncio.create_task(self.client.pause_torrent(info_hash))
 
     def remove_torrent(self):
-        if hasattr(self.client, 'remove_selected_torrent'):
-            self.client.remove_selected_torrent()
+        """Remove selected torrent"""
+        selected = self.torrent_list.selection()
+        if selected and self.client:
+            item = self.torrent_list.item(selected[0])
+            info_hash = item['tags'][0] if item['tags'] else None
+            if info_hash:
+                asyncio.create_task(self.client.remove_torrent(info_hash))
 
     def add_torrent(self):
+        """Add torrent file"""
         file_path = filedialog.askopenfilename(
             title="Select Torrent File",
             filetypes=[("Torrent Files", "*.torrent")]
         )
-        if file_path and hasattr(self.client, 'add_torrent'):
-            self.client.add_torrent(file_path)
-            self.update_torrent_list()
+        if file_path and self.client:
+            asyncio.create_task(self.client.add_torrent(file_path))
 
     def add_magnet(self):
+        """Add magnet link"""
         magnet = simpledialog.askstring(
             "Magnet Link",
             "Enter magnet URL:",
             parent=self
         )
-        if magnet and hasattr(self.client, 'add_magnet_link'):
-            self.client.add_magnet_link(magnet)
+        if magnet and self.client:
+            self.log_message(f"Adding magnet link: {magnet}")
+            # TODO: Implement magnet link handling
+
+    async def start_ui(self):
+        """Start the UI main loop"""
+        while True:
+            self.update()
+            await asyncio.sleep(0.1)
+
 
 if __name__ == "__main__":
-    # Test the UI standalone
-    app = BitTorrentUI(client=None)
-    app.mainloop()
+    async def test_ui():
+        ui = BitTorrentUI(client=None)
+        await ui.start_ui()
+
+
+    asyncio.run(test_ui())
