@@ -1,15 +1,4 @@
-﻿# Core Dependencies
-cryptography>=44.0.2     # For SSL encryption
-requests>=2.31.0         # For tracker HTTP requests
-pyxdg>=0.28              # For config files (Linux/macOS)
-pytest>=8.0.0            # For testing (optional)
-
-# Development Extras (optional)
-black>=24.0.0            # Code formatting
-flake8>=7.0.0            # Linting
-mypy>=1.8.0              # Type checking
-
+﻿PySide6>=6.4.0
+qasync>=0.23.0
 aiohttp>=3.8.0
-bencodepy==1.2.0
-requests>=2.31.0
-cryptography>=44.0.2
+bencodepy>=1.2.0
