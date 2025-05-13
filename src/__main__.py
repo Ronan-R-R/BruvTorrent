@@ -1,57 +1,34 @@
 import asyncio
 import logging
-import platform  # Add this import
+import platform
 import sys
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication
 from qasync import QEventLoop
 
-from src.ui.main_window import MainWindow
-from src.utils.config import Config
-from src.utils.logger import setup_logging
-from src.utils.network_utils import request_firewall_permission, check_firewall_permissions
-
-def show_firewall_prompt(parent=None) -> bool:
-    """Show GUI prompt for firewall permissions"""
-    msg = QMessageBox(parent)
-    msg.setIcon(QMessageBox.Warning)
-    msg.setText("Firewall Permission Required")
-    msg.setInformativeText(
-        "BruvTorrent needs to add a firewall rule to allow incoming connections. "
-        "This is required for proper peer-to-peer functionality."
-    )
-    msg.setWindowTitle("Firewall Configuration")
-    msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
-    return msg.exec() == QMessageBox.Ok
 
 def main():
-    # Setup logging first
-    setup_logging()
+    # Setup logging
+    logging.basicConfig(level=logging.INFO)
 
-    # Qt application setup
+    # Initialize Qt
     app = QApplication(sys.argv)
-    app.setApplicationName("BruvTorrent")
-    app.setApplicationDisplayName("BruvTorrent")
-    app.setOrganizationName("BruvTorrent")
 
-    # Check and request firewall permissions
+    # Automatically request firewall permissions if needed on Windows
     if platform.system() == 'Windows':
-        if show_firewall_prompt():
-            if not request_firewall_permission():
-                logging.error("Failed to configure firewall rules")
-        else:
-            logging.warning("Firewall permissions not granted - connections may be limited")
+        from src.utils.network_utils import request_windows_firewall_rule
+        request_windows_firewall_rule(sys.executable)
 
-    # Set up asyncio event loop integrated with Qt
+    # Setup event loop and main window
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
 
-    # Create and show main window
+    from src.ui.main_window import MainWindow
     window = MainWindow()
     window.show()
 
-    # Run the application
     with loop:
         sys.exit(loop.run_forever())
+
 
 if __name__ == "__main__":
     main()
