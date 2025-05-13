@@ -43,20 +43,28 @@ class PeerConnection:
     async def connect(self) -> bool:
         """Establish connection with peer including handshake and bitfield exchange"""
         try:
-            # Check firewall permissions
-            if not await self._check_firewall_permissions():
-                self.logger.warning(f"Firewall may be blocking connection to {self.peer}")
-                # Continue anyway in case it's just the test that failed
-
-            # Create connection with timeout
+            # First attempt connection
             try:
                 self.reader, self.writer = await asyncio.wait_for(
                     asyncio.open_connection(self.peer[0], self.peer[1]),
                     timeout=self.timeout
                 )
             except (asyncio.TimeoutError, ConnectionRefusedError) as e:
-                self.logger.debug(f"Connection to {self.peer} failed: {str(e)}")
-                return False
+                # If first attempt fails, check firewall
+                self.logger.debug(f"Initial connection failed: {str(e)}")
+                if not check_firewall_permissions(self.peer[0], self.peer[1]):
+                    self.logger.warning("Firewall appears to be blocking connections")
+                    # Don't return yet - try again in case it was a temporary issue
+
+                # Second attempt
+                try:
+                    self.reader, self.writer = await asyncio.wait_for(
+                        asyncio.open_connection(self.peer[0], self.peer[1]),
+                        timeout=self.timeout
+                    )
+                except (asyncio.TimeoutError, ConnectionRefusedError) as e:
+                    self.logger.warning(f"Persistent connection failure to {self.peer}: {str(e)}")
+                    return False
 
             # Perform handshake
             if not await self._handshake():

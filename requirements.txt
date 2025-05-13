@@ -1,4 +1,11 @@
-﻿PySide6>=6.4.0
-qasync>=0.23.0
+﻿# Core dependencies
 aiohttp>=3.8.0
-bencodepy>=1.2.0
+bencode.py>=4.0.0
+cryptography>=42.0.0
+PySide6>=6.4.0
+qasync>=0.23.0  # Required for asyncio-Qt integration
+
+# Development
+pytest>=7.0.0
+black>=23.0.0
+mypy>=1.0.0

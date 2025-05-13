@@ -1,9 +1,10 @@
-# src/utils/network_utils.py
 import ctypes
 import logging
-import platform
+import platform  # Add this import
 import socket
 import sys
+from typing import Optional
+
 
 def check_firewall_permissions(host: str, port: int) -> bool:
     """Check if firewall might be blocking connections"""
@@ -17,19 +18,26 @@ def check_firewall_permissions(host: str, port: int) -> bool:
         logging.warning(f"Firewall may be blocking connections to {host}:{port}: {e}")
         return False
 
+
 def request_firewall_permission(app_name: str = "BruvTorrent") -> bool:
     """Request firewall permissions (Windows only)"""
-    if platform.system() == 'Windows':
+    if platform.system() == 'Windows':  # Now using the imported platform module
         try:
-            # Request firewall permission (will show UAC prompt)
+            # Create a proper firewall rule with elevated privileges
+            command = (
+                f'netsh advfirewall firewall add rule '
+                f'name="{app_name}" '
+                f'dir=in action=allow '
+                f'program="{sys.executable}" '
+                f'enable=yes'
+            )
+
+            # Run with proper UAC elevation
             ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", "netsh",
-                f"advfirewall firewall add rule name=\"{app_name}\" "
-                "dir=in action=allow program=\"\" "
-                "enable=yes", None, 0
+                None, "runas", "netsh", command, None, 1
             )
             return True
         except Exception as e:
-            logging.warning(f"Failed to request firewall permission: {e}")
+            logging.error(f"Failed to request firewall permission: {e}")
             return False
     return True
