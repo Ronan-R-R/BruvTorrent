@@ -3,7 +3,6 @@ without nagging the user with a UAC prompt on every launch."""
 import logging
 import platform
 import subprocess
-from typing import Optional
 
 logger = logging.getLogger('network')
 

@@ -1,7 +1,7 @@
 """Main application window."""
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Dict
 
 from PySide6.QtCore import QRect, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QKeySequence
@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QHeaderView,
 from qasync import asyncSlot
 
 from src.core.engine import Engine
-from src.core.session import State, TorrentSession
+from src.core.session import TorrentSession
 from src.ui.formatting import format_eta, format_size, format_speed
 from src.ui.settings import SettingsDialog
 from src.ui.themes import apply_theme, colors_for

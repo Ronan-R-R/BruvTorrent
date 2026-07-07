@@ -5,7 +5,7 @@ decode_from() exposes the end index so callers can extract the raw byte
 slice of a value (needed for info-hash computation and ut_metadata
 messages, where a bencoded dict is followed by raw payload bytes).
 """
-from typing import Any, Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 BValue = Union[int, bytes, List['BValue'], Dict[bytes, 'BValue']]
 

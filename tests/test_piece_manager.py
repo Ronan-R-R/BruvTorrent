@@ -1,8 +1,7 @@
-import hashlib
 
 import pytest
 
-from src.core.piece_manager import BLOCK_SIZE, PieceManager
+from src.core.piece_manager import PieceManager
 from src.core.torrent import Torrent
 from tests.conftest import make_torrent_bytes
 

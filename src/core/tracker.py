@@ -6,7 +6,7 @@ import socket
 import struct
 import urllib.parse
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 from urllib.parse import urlparse
 
 import aiohttp

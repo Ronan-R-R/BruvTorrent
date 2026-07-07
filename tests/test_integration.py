@@ -6,7 +6,6 @@ import os
 import pytest
 
 from src.core.engine import Engine
-from src.core.session import State
 from tests.conftest import make_torrent_bytes
 
 
