@@ -1,151 +1,237 @@
-﻿import asyncio
+"""Tracker communication: HTTP(S) (BEP 3) and UDP (BEP 15)."""
+import asyncio
+import logging
+import random
 import socket
-import urllib.parse
-import aiohttp
 import struct
-from typing import Dict, List, Tuple, Optional
+import urllib.parse
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-class Tracker:
-    def __init__(self, torrent):
-        self.torrent = torrent
-        self.peer_id = self._generate_peer_id()
-        self.http_timeout = 30
+import aiohttp
 
-    async def get_peers(self) -> List[Tuple[str, int]]:
-        if self.torrent.announce.startswith('http'):
-            return await self._get_peers_from_http_tracker()
-        elif self.torrent.announce.startswith('udp'):
-            return await self._get_peers_from_udp_tracker()
-        else:
-            raise RuntimeError(f"Unsupported tracker protocol: {self.torrent.announce}")
+from src.core import bencode
 
-    async def _get_peers_from_http_tracker(self) -> List[Tuple[str, int]]:
+logger = logging.getLogger('tracker')
+
+UDP_MAGIC = 0x41727101980
+DEFAULT_INTERVAL = 1800
+EVENT_CODES = {'': 0, 'completed': 1, 'started': 2, 'stopped': 3}
+
+
+@dataclass
+class AnnounceResult:
+    peers: List[Tuple[str, int]] = field(default_factory=list)
+    interval: int = DEFAULT_INTERVAL
+    seeders: int = 0
+    leechers: int = 0
+
+
+class TrackerError(Exception):
+    pass
+
+
+class TrackerPool:
+    """Announces across all tracker tiers, remembering which URL in each
+    tier responded so it can be tried first next time (BEP 12)."""
+
+    def __init__(self, tiers: List[List[str]], info_hash: bytes,
+                 peer_id: bytes, port: int):
+        self.tiers = [list(tier) for tier in tiers]
+        self.info_hash = info_hash
+        self.peer_id = peer_id
+        self.port = port
+        self.http_timeout = 25
+
+    async def announce(self, uploaded: int, downloaded: int, left: int,
+                       event: str = '') -> AnnounceResult:
+        merged = AnnounceResult(peers=[], interval=DEFAULT_INTERVAL)
+        seen: set = set()
+        any_ok = False
+
+        for tier in self.tiers:
+            for position, url in enumerate(tier):
+                try:
+                    result = await self._announce_one(
+                        url, uploaded, downloaded, left, event)
+                except (TrackerError, aiohttp.ClientError, asyncio.TimeoutError,
+                        OSError, bencode.BencodeError) as exc:
+                    logger.debug("tracker %s failed: %s", url, exc)
+                    continue
+                # Move the working tracker to the front of its tier.
+                if position != 0:
+                    tier.insert(0, tier.pop(position))
+                any_ok = True
+                for peer in result.peers:
+                    if peer not in seen:
+                        seen.add(peer)
+                        merged.peers.append(peer)
+                merged.interval = max(merged.interval, result.interval)
+                merged.seeders = max(merged.seeders, result.seeders)
+                merged.leechers = max(merged.leechers, result.leechers)
+                break  # one success per tier is enough
+
+        if not any_ok:
+            raise TrackerError("all trackers failed")
+        return merged
+
+    async def _announce_one(self, url: str, uploaded: int, downloaded: int,
+                            left: int, event: str) -> AnnounceResult:
+        scheme = urlparse(url).scheme
+        if scheme in ('http', 'https'):
+            return await self._announce_http(url, uploaded, downloaded, left, event)
+        if scheme == 'udp':
+            return await self._announce_udp(url, uploaded, downloaded, left, event)
+        raise TrackerError(f"unsupported tracker scheme: {scheme}")
+
+    # ------------------------------------------------------------------
+    async def _announce_http(self, url: str, uploaded: int, downloaded: int,
+                             left: int, event: str) -> AnnounceResult:
         params = {
-            'info_hash': self.torrent.info_hash,
+            'info_hash': self.info_hash,
             'peer_id': self.peer_id,
-            'uploaded': 0,
-            'downloaded': 0,
-            'port': 6881,
-            'left': self.torrent.total_size,
-            'compact': 1
-        }
-
-        url = self.torrent.announce + '?' + urllib.parse.urlencode(params)
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.http_timeout)) as session:
-            async with session.get(url) as response:
-                if not response.status == 200:
-                    raise ConnectionError(f"HTTP tracker response: {response.status}")
-                data = await response.read()
-                return self._decode_http_response(data)
-
-    async def _get_peers_from_udp_tracker(self) -> List[Tuple[str, int]]:
-        parsed = urlparse(self.torrent.announce)
-        tracker_host, tracker_port = parsed.hostname, parsed.port
-
-        # Create UDP connection
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.settimeout(self.http_timeout)
-
-        # Connection ID for UDP trackers (magic number)
-        connection_id = 0x41727101980
-        transaction_id = 12345  # Random ID
-
-        # Connect request
-        connect_payload = struct.pack('!QII', connection_id, 0, transaction_id)
-        sock.sendto(connect_payload, (tracker_host, tracker_port))
-
-        # Get connect response
-        response = sock.recv(16)
-        action, transaction_id, connection_id = struct.unpack('!IIQ', response)
-
-        if action != 0 or transaction_id != transaction_id:
-            raise ConnectionError("Invalid UDP tracker response")
-
-        # Announce request
-        announce_payload = struct.pack(
-            '!QII20s20sQQQIIIiH',
-            connection_id,
-            1,  # announce
-            transaction_id,
-            self.torrent.info_hash,
-            self.peer_id.encode(),
-            0,  # downloaded
-            self.torrent.total_size,  # left
-            0,  # uploaded
-            0,  # event (0=none)
-            0,  # IP address (0=default)
-            transaction_id,  # key
-            -1,  # num_want (-1=default)
-            6881  # port
-        )
-        sock.sendto(announce_payload, (tracker_host, tracker_port))
-
-        # Get announce response
-        response = sock.recv(1024)
-        action, transaction_id, interval, leechers, seeders = struct.unpack('!IIIII', response[:20])
-        peers = response[20:]
-
-        if action != 1 or transaction_id != transaction_id:
-            raise ConnectionError("Invalid UDP tracker announce response")
-
-        # Parse peers (6 bytes per peer: 4 for IP, 2 for port)
-        peers_list = []
-        for i in range(0, len(peers), 6):
-            ip = socket.inet_ntoa(peers[i:i+4])
-            port = struct.unpack('!H', peers[i+4:i+6])[0]
-            peers_list.append((ip, port))
-
-        return peers_list
-
-    def _decode_http_response(self, response: bytes) -> List[Tuple[str, int]]:
-        try:
-            import bencodepy
-            decoded = bencodepy.decode(response)
-        except ImportError:
-            import bencode
-            decoded = bencode.bdecode(response)
-
-        if b'peers' not in decoded:
-            raise ConnectionError("Invalid tracker response - no peers")
-
-        peers = decoded[b'peers']
-        if isinstance(peers, list):
-            # Dictionary model
-            return [(p[b'ip'].decode(), p[b'port']) for p in peers]
-        else:
-            # Binary model
-            peers_list = []
-            for i in range(0, len(peers), 6):
-                ip = socket.inet_ntoa(peers[i:i+4])
-                port = struct.unpack('!H', peers[i+4:i+6])[0]
-                peers_list.append((ip, port))
-            return peers_list
-
-    def _generate_peer_id(self) -> str:
-        import random
-        import string
-        return '-PC0001-' + ''.join(random.choices(string.digits, k=12))
-
-    async def announce(self, uploaded: int, downloaded: int, left: int, event: str = '') -> List[Tuple[str, int]]:
-        """Announce to tracker with current stats"""
-        params = {
-            'info_hash': self.torrent.info_hash,
-            'peer_id': self.peer_id,
+            'port': self.port,
             'uploaded': uploaded,
             'downloaded': downloaded,
             'left': left,
-            'port': 6881,
-            'compact': 1
+            'compact': 1,
+            'numwant': 80,
         }
-
         if event:
             params['event'] = event
+        query = urllib.parse.urlencode(params)
+        full_url = f"{url}{'&' if '?' in url else '?'}{query}"
 
-        url = self.torrent.announce + '?' + urllib.parse.urlencode(params)
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.http_timeout)) as session:
-            async with session.get(url) as response:
-                if not response.status == 200:
-                    raise ConnectionError(f"Tracker announce failed: {response.status}")
-                data = await response.read()
-                return self._decode_http_response(data)
+        timeout = aiohttp.ClientTimeout(total=self.http_timeout)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(full_url) as response:
+                if response.status != 200:
+                    raise TrackerError(f"HTTP {response.status}")
+                body = await response.read()
+
+        decoded = bencode.decode(body)
+        if not isinstance(decoded, dict):
+            raise TrackerError("malformed tracker response")
+        if b'failure reason' in decoded:
+            raise TrackerError(decoded[b'failure reason'].decode('utf-8', 'replace'))
+
+        result = AnnounceResult()
+        result.interval = decoded.get(b'interval', DEFAULT_INTERVAL)
+        result.seeders = decoded.get(b'complete', 0)
+        result.leechers = decoded.get(b'incomplete', 0)
+        result.peers = _parse_peers(decoded.get(b'peers', b''))
+        result.peers.extend(_parse_peers6(decoded.get(b'peers6', b'')))
+        return result
+
+    # ------------------------------------------------------------------
+    async def _announce_udp(self, url: str, uploaded: int, downloaded: int,
+                            left: int, event: str) -> AnnounceResult:
+        parsed = urlparse(url)
+        if not parsed.hostname or not parsed.port:
+            raise TrackerError("malformed UDP tracker URL")
+        loop = asyncio.get_running_loop()
+        transport, protocol = await loop.create_datagram_endpoint(
+            lambda: _UdpTrackerProtocol(),
+            remote_addr=(parsed.hostname, parsed.port))
+        try:
+            connection_id = await self._udp_connect(protocol, transport)
+            return await self._udp_announce(
+                protocol, transport, connection_id,
+                uploaded, downloaded, left, event)
+        finally:
+            transport.close()
+
+    async def _udp_connect(self, protocol: '_UdpTrackerProtocol',
+                           transport) -> int:
+        transaction_id = random.randint(0, 0xFFFFFFFF)
+        request = struct.pack('!QII', UDP_MAGIC, 0, transaction_id)
+        data = await protocol.exchange(transport, request, transaction_id)
+        if len(data) < 16:
+            raise TrackerError("short UDP connect response")
+        action, txn, connection_id = struct.unpack('!IIQ', data[:16])
+        if action != 0 or txn != transaction_id:
+            raise TrackerError("bad UDP connect response")
+        return connection_id
+
+    async def _udp_announce(self, protocol: '_UdpTrackerProtocol', transport,
+                            connection_id: int, uploaded: int, downloaded: int,
+                            left: int, event: str) -> AnnounceResult:
+        transaction_id = random.randint(0, 0xFFFFFFFF)
+        key = random.randint(0, 0xFFFFFFFF)
+        request = struct.pack(
+            '!QII20s20sQQQIIIiH',
+            connection_id, 1, transaction_id,
+            self.info_hash, self.peer_id,
+            downloaded, left, uploaded,
+            EVENT_CODES.get(event, 0), 0, key, -1, self.port)
+        data = await protocol.exchange(transport, request, transaction_id)
+        if len(data) < 20:
+            raise TrackerError("short UDP announce response")
+        action, txn, interval, leechers, seeders = struct.unpack('!IIIII', data[:20])
+        if action != 1 or txn != transaction_id:
+            raise TrackerError("bad UDP announce response")
+        result = AnnounceResult()
+        result.interval = interval or DEFAULT_INTERVAL
+        result.seeders = seeders
+        result.leechers = leechers
+        result.peers = _parse_peers(data[20:])
+        return result
+
+
+class _UdpTrackerProtocol(asyncio.DatagramProtocol):
+    def __init__(self) -> None:
+        self._futures: Dict[int, asyncio.Future] = {}
+
+    def datagram_received(self, data: bytes, addr) -> None:
+        if len(data) < 8:
+            return
+        txn = struct.unpack('!I', data[4:8])[0]
+        future = self._futures.pop(txn, None)
+        if future and not future.done():
+            future.set_result(data)
+
+    async def exchange(self, transport, request: bytes,
+                       transaction_id: int, retries: int = 3) -> bytes:
+        loop = asyncio.get_running_loop()
+        for attempt in range(retries):
+            future = loop.create_future()
+            self._futures[transaction_id] = future
+            transport.sendto(request)
+            try:
+                return await asyncio.wait_for(future, timeout=3 * (attempt + 1))
+            except asyncio.TimeoutError:
+                self._futures.pop(transaction_id, None)
+        raise TrackerError("UDP tracker timed out")
+
+
+def _parse_peers(raw) -> List[Tuple[str, int]]:
+    """Handle both compact (bytes) and dictionary (list) peer models."""
+    if isinstance(raw, list):
+        peers = []
+        for entry in raw:
+            if isinstance(entry, dict) and b'ip' in entry and b'port' in entry:
+                ip = entry[b'ip'].decode('utf-8', 'replace')
+                peers.append((ip, entry[b'port']))
+        return peers
+    if not isinstance(raw, bytes):
+        return []
+    peers = []
+    for i in range(0, len(raw) - 5, 6):
+        ip = socket.inet_ntoa(raw[i:i + 4])
+        port = struct.unpack('!H', raw[i + 4:i + 6])[0]
+        if port:
+            peers.append((ip, port))
+    return peers
+
+
+def _parse_peers6(raw) -> List[Tuple[str, int]]:
+    if not isinstance(raw, bytes):
+        return []
+    peers = []
+    for i in range(0, len(raw) - 17, 18):
+        ip = socket.inet_ntop(socket.AF_INET6, raw[i:i + 16])
+        port = struct.unpack('!H', raw[i + 16:i + 18])[0]
+        if port:
+            peers.append((ip, port))
+    return peers

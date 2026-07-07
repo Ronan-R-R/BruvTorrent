@@ -1,33 +1,41 @@
 import asyncio
-import logging
+import os
 import platform
 import sys
+
 from PySide6.QtWidgets import QApplication
 from qasync import QEventLoop
 
+from src.utils.config import Config
+from src.utils.logger import setup_logging
 
-def main():
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
 
-    # Initialize Qt
+def main() -> None:
+    setup_logging()
+    config = Config()
+    os.makedirs(config.get('download_dir'), exist_ok=True)
+
     app = QApplication(sys.argv)
+    app.setApplicationName("BruvTorrent")
 
-    # Automatically request firewall permissions if needed on Windows
     if platform.system() == 'Windows':
-        from src.utils.network_utils import request_windows_firewall_rule
-        request_windows_firewall_rule(sys.executable)
+        from src.utils.network_utils import ensure_firewall_rule
+        ensure_firewall_rule(sys.executable, config)
 
-    # Setup event loop and main window
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
 
     from src.ui.main_window import MainWindow
-    window = MainWindow()
-    window.show()
+    window = MainWindow(config)
+    if config.get('start_minimized'):
+        window.showMinimized()
+    else:
+        window.show()
+
+    asyncio.ensure_future(window.init_engine())
 
     with loop:
-        sys.exit(loop.run_forever())
+        loop.run_forever()
 
 
 if __name__ == "__main__":

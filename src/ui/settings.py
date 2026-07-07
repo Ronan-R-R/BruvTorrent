@@ -1,9 +1,9 @@
-from PySide6.QtCore import Qt
+"""Preferences dialog."""
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                               QFileDialog, QFormLayout, QLabel, QLineEdit,
-                               QPushButton, QVBoxLayout)
+                               QFileDialog, QFormLayout, QHBoxLayout, QLineEdit,
+                               QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
-from src.ui.themes import THEMES
+from src.ui.themes import PALETTES
 
 
 class SettingsDialog(QDialog):
@@ -11,63 +11,65 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("Preferences")
-        self._setup_ui()
+        self.setMinimumWidth(440)
+        self._build()
 
-    def _setup_ui(self):
-        layout = QVBoxLayout()
-        self.setLayout(layout)
+    def _build(self) -> None:
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        form.setSpacing(10)
 
-        form_layout = QFormLayout()
-
-        # Theme selection
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(THEMES.keys())
-        current_theme = self.config.get('theme', 'dark')
-        self.theme_combo.setCurrentText(current_theme)
-        form_layout.addRow("Theme:", self.theme_combo)
+        self.theme_combo.addItems(PALETTES.keys())
+        self.theme_combo.setCurrentText(self.config.get('theme'))
+        form.addRow("Theme", self.theme_combo)
 
-        # Download directory
-        self.download_dir_edit = QLineEdit()
-        self.download_dir_edit.setText(self.config.get('download_dir', ''))
-        browse_button = QPushButton("Browse...")
-        browse_button.clicked.connect(self._browse_download_dir)
-        form_layout.addRow("Download Directory:", self.download_dir_edit)
-        form_layout.addRow("", browse_button)
+        self.dir_edit = QLineEdit(self.config.get('download_dir'))
+        browse = QPushButton("Browse")
+        browse.clicked.connect(self._browse)
+        dir_row = QWidget()
+        dir_layout = QHBoxLayout(dir_row)
+        dir_layout.setContentsMargins(0, 0, 0, 0)
+        dir_layout.addWidget(self.dir_edit)
+        dir_layout.addWidget(browse)
+        form.addRow("Download folder", dir_row)
 
-        # Max connections
-        self.max_connections_edit = QLineEdit()
-        self.max_connections_edit.setText(str(self.config.get('max_connections', 50)))
-        form_layout.addRow("Max Connections:", self.max_connections_edit)
+        self.port_spin = QSpinBox()
+        self.port_spin.setRange(1024, 65535)
+        self.port_spin.setValue(int(self.config.get('listen_port')))
+        form.addRow("Listen port", self.port_spin)
 
-        # Start minimized
-        self.start_minimized_check = QCheckBox()
-        self.start_minimized_check.setChecked(self.config.get('start_minimized', False))
-        form_layout.addRow("Start Minimized:", self.start_minimized_check)
+        self.conn_spin = QSpinBox()
+        self.conn_spin.setRange(10, 1000)
+        self.conn_spin.setValue(int(self.config.get('max_connections')))
+        form.addRow("Max connections", self.conn_spin)
 
-        layout.addLayout(form_layout)
+        self.minimized_check = QCheckBox()
+        self.minimized_check.setChecked(bool(self.config.get('start_minimized')))
+        form.addRow("Start minimized", self.minimized_check)
 
-        # Buttons
+        layout.addLayout(form)
+
         buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
-            Qt.Horizontal, self
-        )
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def _browse_download_dir(self):
+    def _browse(self) -> None:
         directory = QFileDialog.getExistingDirectory(
-            self, "Select Download Directory")
+            self, "Select download folder", self.dir_edit.text())
         if directory:
-            self.download_dir_edit.setText(directory)
+            self.dir_edit.setText(directory)
 
-    def get_selected_theme(self) -> str:
+    @property
+    def selected_theme(self) -> str:
         return self.theme_combo.currentText()
 
-    def accept(self):
-        # Save settings to config
-        self.config.set('theme', self.get_selected_theme())
-        self.config.set('download_dir', self.download_dir_edit.text())
-        self.config.set('max_connections', int(self.max_connections_edit.text()))
-        self.config.set('start_minimized', self.start_minimized_check.isChecked())
+    def accept(self) -> None:
+        self.config.set('theme', self.selected_theme)
+        self.config.set('download_dir', self.dir_edit.text())
+        self.config.set('listen_port', self.port_spin.value())
+        self.config.set('max_connections', self.conn_spin.value())
+        self.config.set('start_minimized', self.minimized_check.isChecked())
         super().accept()
